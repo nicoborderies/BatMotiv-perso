@@ -16,13 +16,13 @@ function [root,vbadir,analysisdir,datadir,resultdir] = setPath
     icmDisk = 'B:';
     disk = icmDisk;
     
-    root = [ disk '\nicolas.borderies\Projets scientifiques'];
+    root = [ disk '\nicolas.borderies\projets'];
     vbadir = [ disk '\nicolas.borderies\MATLAB\GitHub\VBA-toolbox'];
     
     batmotivdir = [root filesep 'batmotiv'];
-    datadir=[batmotivdir filesep 'Bat-données'];
-    analysisdir = [batmotivdir filesep 'Bat-analyse'];
-    resultdir = [batmotivdir filesep 'Bat-résultats'];
+    datadir=[batmotivdir filesep 'données'];
+    analysisdir = [batmotivdir filesep 'code.public'];
+    resultdir = [batmotivdir filesep 'resultats'];
     
 % set path
 %     addpath(genpath(datadir));
