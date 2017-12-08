@@ -127,8 +127,33 @@ function [result,data,option] = process_learning_opioid(data,option)
         end
         inferential{iLevels,['BCA']}  = [model(selectedModel + (iLevels-1)*nAnalysis).vba.BCA ];
       
-     end
+    end
 
+     %% oximeter analysis
+%     if isfield(data, 'oxdata') 
+%         if ~isempty(data.oxdata)
+%             for iLevels = 1:numel(levels)
+%                 oxdata = data.oxdata(data.oxdata(:,14)==iLevels,:);
+%                 datatab = data.table(data.table.sessionNumber==iLevels,:);
+%                 if ~isempty(oxdata)
+%                     try
+%                         [oxi,oxitab,oxistat] = process_oximeter_learning(oxdata,datatab);
+%                         % save result
+%                         if exist('oxi')
+%                             result.oximeter(iLevels).oxi = oxi;
+%                             result.oximeter(iLevels).oxitab = oxitab;
+%                             result.oximeter(iLevels).oxistat = oxistat;
+%                         end
+%                         clear oxi oxitab oxistat;
+%                     catch
+%                         warning('error in oximeter analysis...');
+%                         pause(1);
+%                     end
+%                 end
+%             end
+%         end
+%     end
+    
    
     
     % save result

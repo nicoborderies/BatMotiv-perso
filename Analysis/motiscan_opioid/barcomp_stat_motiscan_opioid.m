@@ -166,7 +166,11 @@ else
     g = gramm('x',V,'y',Y2,'color',T);
 end
 g.set_color_options('map',vertcat(col{:}),'lightness',100);
-g.set_order_options('x',(varnames),'color',treatmentList);
+if numel(unique(V))>1
+    g.set_order_options('x',(varnames),'color',treatmentList);
+else
+    g.set_order_options('color',treatmentList);
+end
 for i = 1:numel(plotType)
     switch plotType{i}
         case 'dot'
@@ -188,7 +192,11 @@ elseif ~isempty(order)
 else
     xname = '';
 end
-g.set_names('x',xname,'y',varlegend,'color','treatment');
+if numel(unique(V))>1
+    g.set_names('x',xname,'y',varlegend,'color','treatment');
+else
+    g.set_names('x',xname,'y',varnames{1},'color','treatment');
+end
 if sessionSplit || ~isempty(order); g.axe_property('XLim',[0 4]); end
 g.axe_property('YLim',[mean(min(Y2)) mean(max(Y2))] + [-0.2 0.2]*mean(mean(Y2)));
 g.axe_property('XTickLabelRotation',45);

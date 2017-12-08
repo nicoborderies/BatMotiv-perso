@@ -1,4 +1,4 @@
-%% hiddenvalue_simulations
+%% hiddenvalue_simulations_2
 %
 % nicolas borderies - 12/2016
 
@@ -23,7 +23,7 @@ close all;
 
 murange = [1];
 sigmarange = [1,1,1];
-alpharange = [1,2,4];
+alpharange = [1,2,8];
 
 % paramvalues = combnk(prange,2);
 paramvalues = combvec(murange,sigmarange)';

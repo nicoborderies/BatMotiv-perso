@@ -41,7 +41,7 @@ fmax = max(dynamo.raw_force);
 
 % format into a table
 behaviorNames = {'nTrial','forcePeak','norm_forcePeak','norm_forceSum','isCorrect',...
-                  'time2peak','velocityPeak','norm_velocityPeak',...
+                  'time2peak','velocityPeak','norm_velocityPeak','relaxationPeak','norm_relaxationPeak',...
                   'responseTime',...
                   'forceDuration','preparatoryDuration',...
                   'trialDuration','norm_forceAmplitude','correct_force'};
@@ -80,9 +80,12 @@ for i=1:ntrial
         velocity = filtfilt(a,b,velocity)/dt;
         dynamo.velocity(dynamo.nTrial==i) = velocity;
         [vpeak,jpeak] = max(velocity);
+        rpeak = min(velocity);
         behavior.velocityPeak(i) = vpeak;
         behavior.norm_velocityPeak(i) = vpeak/fmax;
-       
+        behavior.relaxationPeak(i) = rpeak;
+        behavior.norm_relaxationPeak(i) = rpeak/fmax;
+        
         % estimate behavior times
         try
             try

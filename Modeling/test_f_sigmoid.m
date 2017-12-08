@@ -1,6 +1,6 @@
 
 val = [0.5 , 1, 2 ,3];
-% x = exp(randn(24,1));
+x = exp(randn(24,1));
 x = x./(max(x)*1.1);
 
 range = [0 1];

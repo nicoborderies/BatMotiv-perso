@@ -1,4 +1,4 @@
-function [p,score] = barcomp_motiscan_opioid(data,varname,varlegend,taskname,varargin)
+function [p,score,g] = barcomp_motiscan_opioid(data,varname,varlegend,taskname,varargin)
 
 % check options
 optionList = {'fname','ftransform','sessionSplit','order','statisticalTest','plotType'};
@@ -62,6 +62,8 @@ Y2 = Y - nanmean(Y,1) + nanmean(nanmean(Y)); % normalize by the subject mean
 Y = reshape(Y,nsub*ntrt,1);
 Y2 = reshape(Y2,nsub*ntrt,1);
 T = repmat(nominal(treatmentList'),nsub,1);
+T = reordercats(T,treatmentList);
+
 S = reshape(S,nsub*ntrt,1);
 SUB = repmat([1:nsub],ntrt,1);
 SUB = reshape(SUB,nsub*ntrt,1);
@@ -109,7 +111,8 @@ for i = 1:numel(statisticalTest)
         case 'naloxone_contrast'
             contrast = [1 -1 0];
         case 'opioid_contrast'
-            contrast = [0 -1 1; -1 1 0; -1 0 1];
+%             contrast = [0 -1 1; -1 1 0; -1 0 1];
+            contrast = [-1 0 1];
         case 'opioid_ttest'
             predictor = [ (T=='naloxone')*(-1) + (T=='placebo')*0 + (T=='morphine')*1 , S, O ];
             formula = [varname ' ~ 1 + opioid + session '];
@@ -176,6 +179,9 @@ for i = 1:numel(plotType)
                 g.geom_line();
 %                 g.geom_abline('style','k-');
                 g.draw();
+                ysub = splitapply(@nanmean,Y(SUB==isub),double(T(SUB==isub)));
+                if ysub(3)-ysub(1)>=0; lstyle = '-';else;lstyle = '--';end
+                set(g.results.geom_line_handle,'Color',0*[1 1 1],'LineStyle',lstyle,'LineWidth',1)
             end
             g.update('x',T,'y',Y2,'color',T,'subset',[]);
             g.set_color_options('map',vertcat(col{:}),'lightness',100);

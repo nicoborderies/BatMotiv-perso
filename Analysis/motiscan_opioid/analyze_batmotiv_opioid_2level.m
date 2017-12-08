@@ -9,35 +9,292 @@ close all;
 %-------------------------------
 
 % load dataset
+%%% design table
+datadir = 'B:\nicolas.borderies\projets\batmotiv\données\OPIOID';
+cd(datadir);
+load('subject_table_opioid.mat');
+design = tab;  
+% processed dataset
 datadir = 'B:\nicolas.borderies\projets\batmotiv\resultats\OPIOID';
 codedir = 'B:\nicolas.borderies\projets\batmotiv\code.perso';
 cd(datadir);
-analysisname = ['motiscan_opioid_dataset.mat'];
+analysisname = 'motiscan-opioid-1level_22_8_2017.mat';
 load(analysisname);
 cd(codedir);
-
 
         
 %% Data analysis
 %-------------------------------
 
 % define analysis parameters
-data = [groupData.OPIOID.subject ];
-result = [groupResult.OPIOID.subject ];
+%%% reformat
+data = groupdata;
+result = groupresult;
 %%% lists
-dimensionList = nominal({'writtenReward','visualReward','writtenPunishment','writtenEffort',...
+dimensionList = {'writtenReward','visualReward','writtenPunishment','writtenEffort',...
                             'monetaryReward','monetaryPunishment','gripEffort',...
                             'RewardEffort','PunishmentEffort','RewardPunishment',...
-                            'Gain','Loss','GainLoss','GainEmotion'});
-taskList = nominal( {'rating','choice','weight','discount',...
-                    'grip','gripIAPS','gripAccu','mental','learning'});
+                            'Gain','Loss','GainLoss','GainEmotion'};
+taskList =  {'rating','choice','weight','discount',...
+                    'grip','gripIAPS','gripAccu','mental','learning'};
 treatmentList = {'naloxone','placebo','morphine'};
+orderGrip = design.order_taskGrip(design.selection==1);
+orderRating = design.order_rating(design.selection==1);
+orderWeight = design.order_weight(design.selection==1);
+weight = design.weight(design.selection==1);
+
 ntrt = numel(treatmentList);
 nsub = numel(data);
 %%% display
 col = { [0 0 1]*0.75 , [1 1 1]*0.5 , [1 0 0]*0.75 };
 
-%% 1) grip task
+%% 1) Grip task
+%------------------------
+
+taskname = 'grip';
+
+%% Data completion
+for isub = 1:nsub % subject loop
+        % select
+        tab = data{isub}.battery.table; 
+        selection =  (tab.task==taskname) ;
+        tab = tab(selection,:);
+        % variables
+        incentive = tab.incentiveLevel ; 
+        valence = tab.incentiveSign ; 
+        nt = tab.trialNumber ; 
+        qnt = quantileranks(nt,2) ; 
+        fpeak = tab.normalizedForcePeak ;
+        fsum = tab.normalizedForceSum ;
+        rt = tab.rt;
+        vpeak = tab.normalizedYankPeak;
+        trt = tab.treatment;
+        trt = removecats(trt,'0');
+        session = tab.sessionNumber;
+        
+        
+
+%         trt = reordercats(trt,treatmentList);
+        % stats
+            % orthogonalization of force peak & factors
+            [g] = findgroups(incentive,qnt);
+            [~,~,ycond] = varpart(fpeak,g);
+            data{isub}.(taskname).table.cond_normalizedForcePeak = ycond;
+            [g] = findgroups(trt);
+            mean_cond_normFPeak = splitapply(@nanmean,ycond,g);
+            result{isub}.(taskname).inferential.mean_cond_normFPeak = mean_cond_normFPeak;
+            
+            % glm of force peak
+            intercept = nan(3,1);
+            for isess=1:3
+                predictor = [incentive,incentive.*valence,nt];
+                beta = glmfit(predictor(session==isess,:),fpeak(session==isess),'normal');
+                intercept(isess) = beta(1);
+            end
+            result{isub}.(taskname).inferential.intercept_norm_fpeak = intercept;       
+            
+            % discretization
+            discrete_fpeak = quantileranks(fpeak,6);
+            discrete_fpeak(discrete_fpeak==0)=NaN;
+            data{isub}.(taskname).table.discrete_fpeak = discrete_fpeak;       
+            
+            % force peak - velocity 
+            intercept = nan(3,1);
+            for isess=1:3
+                beta = glmfit(fpeak(session==isess,:),vpeak(session==isess),'normal');
+                intercept(isess) = beta(2);
+            end
+            result{isub}.(taskname).inferential.beta_force_velocity = intercept;  
+
+            % force peak - rt
+            intercept = nan(3,1);
+            for isess=1:3
+                beta = glmfit((fpeak(session==isess,:)),rt(session==isess),'normal');
+                intercept(isess) = beta(2);
+            end
+            result{isub}.(taskname).inferential.beta_rt_force = intercept;  
+            
+            data{isub}.(taskname).table.fpeakByTime = fpeak./rt;
+            data{isub}.(taskname).table.fsumByTime = fsum./rt;
+            data{isub}.(taskname).table.fmean = cellfun(@nanmean,data{isub}.grip.table.normalizedForceValue(:));
+            data{isub}.(taskname).table.fsum = cellfun(@nanmean,data{isub}.grip.table.normalizedForceValue(:));
+
+            
+end
+
+%% Univariate effect of treatments:
+% yname = 'normalizedForcePeak';
+yname = 'normalizedForceSum';
+% yname = 'cond_normalizedForcePeak';
+% yname = 'trialGain';
+% yname = 'time2forcePeak';
+% yname = 'rt';
+% yname = 'normalizedYankPeak';
+% yname = 'fpeakByTime';
+% yname = 'fsumByTime';
+% yname = 'fmean';
+
+
+% ylegend = 'force peak (%fmax)';
+% ylegend = 'velocity peak (%fmax/sec)';
+% ylegend = 'maximal voluntary force peak (%fmax)';
+% ylegend = 'preparation time (sec)';
+ylegend = ' cumulative effort (%fmax)';
+
+
+fname = @nanmean;
+% fname = @nanmax;
+% ftransform = @identity;
+% ftransform = @ (x) normalize(x,'zscore');
+ftransform = @ (x) normalize(x,'max');
+
+sessionEffect=0;
+%   - statistic:
+statistic = {'opioid_ttest'};
+% statistic = {'naloxone_contrast','morphine_contrast'};
+% statistic = {'naloxone_ttest','morphine_ttest'};
+%   - plot: 'bar','dot','jitter','boxplot','violin','line'
+plot = {'jitter','boxplot'};
+
+[p,score] = barcomp_motiscan_opioid(data,yname,ylegend,taskname,...
+                               'fname',fname,'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot); % without session interaction
+
+%% Parametric effect of treatments:
+
+%   - predicted variables
+% yname = {'offset_normalizedForcePeak','incentive_normalizedForcePeak','incentive_gain_normalizedForcePeak','trialNumber_normalizedForcePeak'};
+% yname = {'kR','kP','kE','kF','tau'};
+% yname = {'fmax'};
+% yname = {'offset_normalizedForcePeak'};
+% yname = {'intercept_norm_fpeak'};
+% yname = {'beta_force_velocity'};
+yname = {'beta_rt_force'};
+
+%   - transform
+% ftransform = @log;
+ftransform = @identity;
+% ftransform = @ (x) normalize(x,'variance');
+%   - legend
+ylegend = '';
+% ylegend = 'parameters';
+%   - order interaction
+order = [];
+%   - statistic:
+% statistic = {'opioid_ttest'};
+statistic = {'naloxone_contrast','morphine_contrast'};
+% statistic = {'naloxone_ttest','morphine_ttest'};
+%   - plot: 'bar','dot','jitter','boxplot','violin','line'
+plot = {'boxplot'};
+
+[p,score,stat] = barcomp_stat_motiscan_opioid(result,yname,ylegend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot);
+                           
+%% Bivariate effects of treatment 
+
+
+%   - predicted variable
+% yname = 'normalizedForcePeak';
+yname = 'normalizedForceSum';
+% yname = 'rt';
+% yname = 'normalizedYankPeak';
+%   - factor
+xname = 'incentiveLevel';
+% xname = 'incentiveSign';
+% xname = 'trialNumber';
+% xname = 'discrete_fpeak';
+interaction = [];
+
+
+%   - transform
+ftransform = @identity;
+ftransform = @ (x) normalize(x,'max');
+%   - statistical function
+fname = @nanmean;
+% fname = @nanmax;
+%   - session interaction
+sessionEffect=0;
+%   - legend
+legend = {'incentive','cumulative effort (%fmax)'};
+%   - order interaction
+order = [];
+% order = orderGrip;
+%   - plot: 'dot','jitter','line'
+% plot = {'dot','errorbar'};
+% plot = {'jitter','errorbar'};
+plot = {'errorbar'};
+
+figure;
+bivarcomp_motiscan_opioid(data,xname,yname,legend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot,...
+                               'interactionfactor',interaction);
+                           
+%% Treatments-Cofactors interactions
+yname = 'normalizedForcePeak';
+factor = weight;
+legend = {'weight','force peak (%fmax)'};
+
+ftransform = @identity;
+fname = @nanmean;
+% fname = @nanmax;
+%   - plot: 'dot','jitter','line'
+plot = {'fit','jitter'};
+
+figure;
+cofactor_comp_opioid(data,factor,yname,legend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'plotType',plot);
+                           
+                           
+%% Parametric effect of treatments (GLM)
+%   - predicted variable
+% yname = 'normalizedForcePeak';
+yname = 'normalizedForceSum';
+% yname = 'rt';
+%   - model equation
+formula = [ yname ' ~ 1 + incentive + valence:incentive + ntrial',...
+           '+ naloxone:(1 + incentive + valence:incentive + ntrial)',...
+           '+ morphine:(1 + incentive + valence:incentive + ntrial)',...
+           '+ session'];
+% formula = [ yname ' ~ 1 + incentive + fpeak + valence:incentive',...
+%            '+ naloxone:(1 + incentive + fpeak + valence:incentive)',...
+%            '+ morphine:(1 + incentive + fpeak + valence:incentive )',...
+%            '+ session'];
+       
+varnames = {'incentive','valence','ntrial','fpeak',...
+            'naloxone','placebo','morphine','opioid','session',yname};
+        
+ftransform = @identity;
+% ftransform = @log;
+%   - statistic:
+%   'drug_ttest','opioid_ttest'
+statistic = {'opioid_ttest'};
+% statistic = {'drug_ttest'};
+%   - plot: 'bar','dot','jitter','boxplot','violin','line'
+plot = {'boxplot'};
+% plot = {'bar'};
+
+
+figure;
+[p,coefNames,stat] = glm_grip_motiscan_opioid(data,yname,varnames,formula,...
+                                                         'plotType',plot,...
+                                                         'statisticalTest',statistic,...
+                                                         'ftransform',ftransform);
+                           
+%%
 % raw effect
 
     nbin = [ 3 , nsub ];
@@ -382,83 +639,177 @@ col = { [0 0 1]*0.75 , [1 1 1]*0.5 , [1 0 0]*0.75 };
 %% 2) Sustained Effort task
 %------------------------------------------
 
-% parameters
-nbin = [ ntrt , nsub ];
+taskname = 'gripAccu';
 
-
-% Effect of Treatments:
-%   - effort duration
-
-    % prepare variables
-        Y = nan(nbin);
-        Y2 = nan(nbin);
-    for isub = 1:nsub % subject loop
+%% Data completion
+for isub = 1:nsub % subject loop
         % select
-            tab = data{isub}.battery.table; 
-            selection =  (tab.task=='gripAccu') ;
-            tab = tab(selection,:);
-            
+        tab = data{isub}.battery.table; 
+        selection =  (tab.task==taskname) ;
+        tab = tab(selection,:);
         % variables
-            effort = tab.effortDuration;
-%             effort = effort./max(effort(tab.treatment=='placebo'));
-%             effort = normalize(effort,'zscore');
-%             effort = tab.predicted_effortDuration;
-            rest = tab.restDuration;
-            totaltime = tab.effortDuration + tab.restDuration ;
-            gain = tab.gain;
-            trt = tab.treatment;
-            trt = removecats(trt,'0');
-            trt = reordercats(trt,treatmentList);
-            session = tab.sessionNumber;
-            
-        % stats
-            [~,subtrt] = ismember(unique(trt),treatmentList);
-            trt = reordercats(trt,treatmentList(subtrt));
+        y = tab.forceDuration ./(tab.trialDuration);
+%         data{isub}.battery.table.effortRatio = [];
+        data{isub}.(taskname).table{:,'effortRatio'} = y;
+        y = tab.trialDuration -  tab.responseTime;
+        data{isub}.(taskname).table{:,'squeezeDuration'} = y;
+        meanTD = nanmean(tab.trialDuration);
+        maxTD = nanmax(tab.trialDuration);
+        data{isub}.(taskname).table{:,'prepareDuration_meanTD'} = tab.preparatoryDuration./meanTD;
+        data{isub}.(taskname).table{:,'prepareDuration_maxTD'} = tab.preparatoryDuration./maxTD;
+end
 
-            
-%             ysub = tools.tapply(effort,{trt},@nanmean);
-%             ysub = tools.tapply(rest,{trt},@nanmean);
-            ysub =  tools.tapply(effort,{session},@nanmean);
-%             ysub =  tools.tapply(gain,{trt},@nanmax);
+%% Univariate effect of treatments:
 
-            Y(subtrt,isub) =  ysub;
-            Y2(subtrt,isub) =  Y(subtrt,isub)- Y(2,isub);
-     end
-    
-    
-    % display
-        fig = figure; set(fig,'Name','gripAccu_opioid');
-            
-            dsub=2;
-            y = nanmean(Y,dsub);
-            z = sem(Y2,dsub);
-            
-            hold on; clear h;
-            for it=1:3
-                x = it;
-                [ h(it)  ] = barplot( x ,y(it),z(it), col{it} );
-% %                 [ h(it)  ] = barplot( x ,y(it),z(it), col{3} );
-                h(it).BarWidth = 0.5;
-                
-%                 [ h ] = plotSpread(Y','distributionColors',col);
-%                 m = findobj('-property','MarkerFaceColor');
-%                 set(m,'MarkerSize',14);
-            end
-            legend([h(1) h(2) h(3)],treatmentList);
-            
-        % legending
-            ax = gca; 
-            ax.XTick = [];
-            ylabel('force duration (sec) '); 
-%             ylabel('rest duration (sec) '); 
-%             ylabel('total gain (€)');
-            ax.XLim = [0 x(end)+1];
-            ax.YLim = [min(y) max(y)] + [-0.2 0.2]*mean(y);
+%   - predicted variable
+% yname = 'effortDuration';
+% yname = 'restDuration';
+yname = 'effortRatio';
+% yname = 'forceDuration';
+% yname = 'preparatoryDuration';
+% yname = 'prepareDuration_meanTD';
+% yname = 'prepareDuration_maxTD';
+% yname = 'norm_forceAmplitude';
+% yname = 'correct_force';
+% yname = 'norm_forceSum';
+% yname = 'responseTime';
+% yname = 'squeezeDuration';
+% yname = 'gain';
+% yname = 'trialDuration';
+%   - transform
+% ftransform = @ (x) normalize(x,'zscore');
+ftransform = @identity;
+%   - statistical function
+fname = @nanmean;
+% fname = @nanmax;
+%   - session interaction
+sessionEffect=0;
+%   - legend
+% ylegend = 'force duration (sec)';
+% ylegend = 'preparation duration (sec)';
+ylegend = 'effort rate (%)';
 
-        % format
-        setFigProper('FontSize',20,'LineWidth',2);
+%   - order interaction
+order = [];
+% order = orderGrip;
+%   - statistic:
+%   'morphine_contrast','naloxone_contrast','opioid_contrast',...
+%   'morphine_ttest','naloxone_ttest','opioid_ttest'
+statistic = {'opioid_contrast'};
+% statistic = {'naloxone_contrast','morphine_contrast'};
+% statistic = {'naloxone_ttest','morphine_ttest'};
+%   - plot: 'bar','dot','jitter','boxplot','violin','line'
+plotType = {'jitter','boxplot'};
+% plotType = {'boxplot','line','dot'};
 
 
+figure;
+[p,score,g] = barcomp_motiscan_opioid(data,yname,ylegend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plotType);
+                           
+%% Bivariate effects of treatment 
+
+
+%   - predicted variable
+% yname = 'effortDuration';
+yname = 'effortRatio';
+% yname = 'forceDuration';
+% yname = 'preparatoryDuration';
+% yname = 'norm_forceAmplitude';
+% yname = 'correct_force';
+% yname = 'norm_forceSum';
+% yname = 'responseTime';
+% yname = 'squeezeDuration';
+% yname = 'gain';
+% yname = 'trialDuration';
+%   - factor
+% xname = 'incentiveLevel';
+xname = 'costLevel';
+interaction = 'incentiveLevel';
+%   - transform
+ftransform = @identity;
+%   - statistical function
+fname = @nanmean;
+% fname = @nanmax;
+%   - session interaction
+sessionEffect=0;
+%   - legend
+legend = {'costLevel','force duration (% trial duration)','incentive'};
+%   - order interaction
+order = [];
+% order = orderGrip;
+%   - plot: 'dot','jitter','line'
+% plot = {'dot','errorbar'};
+% plot = {'jitter','errorbar'};
+plot = {'errorbar'};
+
+%   - interaction
+
+
+figure;
+bivarcomp_motiscan_opioid(data,xname,yname,legend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot,...
+                               'interactionfactor',interaction);
+
+%% Treatments-Cofactors interactions
+yname = 'effortRatio';
+% yname = 'forceDuration';
+factor = weight;
+legend = {'weight','force duration (%trial duration)'};
+
+ftransform = @identity;
+fname = @nanmean;
+% fname = @nanmax;
+%   - plot: 'dot','jitter','line'
+plot = {'fit','jitter'};
+
+figure;
+cofactor_comp_opioid(data,factor,yname,legend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'plotType',plot);
+                           
+%% Parametric effect of treatments (GLM)
+%   - predicted variable
+% yname = 'forceDuration';
+% yname = 'preparatoryDuration';
+yname = 'effortRatio';
+%   - model equation
+formula = [ yname ' ~ 1 + incentive + difficulty + instruction:difficulty + nblock + ntrial_block + hand',...
+           '+ naloxone:(1 + incentive + difficulty + instruction:difficulty + nblock + ntrial_block + hand)',...
+           '+ morphine:(1 + incentive + difficulty + instruction:difficulty + nblock + ntrial_block + hand)',...
+           '+ session'];
+% formula = [ yname ' ~ 1 + incentive + difficulty + instruction:difficulty + nblock + ntrial_block + hand',...
+%            '+ opioid:(1 + incentive + difficulty + instruction:difficulty + nblock + ntrial_block + hand)',...
+%            '+ session'];
+varnames = {'incentive','difficulty','instruction','effort_t',...
+            'nblock','ntrial_block','hand',...
+            'naloxone','placebo','morphine','opioid','session',yname};
+%   - statistic:
+%   'drug_ttest','opioid_ttest'
+% statistic = {'opioid_ttest'};
+statistic = {'drug_ttest'};
+%   - plot: 'bar','dot','jitter','boxplot','violin','line'
+plot = {'boxplot'};
+% plot = {'bar'};
+
+figure;
+[p,coefNames,stat] = glm_gripAccu_motiscan_opioid(data,yname,varnames,formula,...
+                                                         'plotType',plot,...
+                                                         'statisticalTest',statistic);
+                    
+                    
+                    
 %% cost effect
     nbin = [ 3 , 2 , nsub ];
 
@@ -471,6 +822,7 @@ nbin = [ ntrt , nsub ];
                 
         % select
             tab = data{isub}.battery.table; 
+            tab = data{isub}.('gripAccu').table; 
             selection =  (tab.task=='gripAccu') ;
             tab = tab(selection,:);
             
@@ -605,14 +957,17 @@ nbin = [ ntrt , nsub ];
     for isub = 1:nsub
                 
         % select
-            tab = data{isub}.battery.table; 
+%             tab = data{isub}.battery.table; 
+            tab = data{isub}.('gripAccu').table; 
             selection =  (tab.task=='gripAccu') ;
             tab = tab(selection,:);
             
         % variables
 
 %             effort = tab.effortDuration;
-            effort = tab.predicted_effortDuration;
+            effort = tab.effortRatio;
+
+%             effort = tab.predicted_effortDuration;
             rest = tab.restDuration;
 
             cost = tab.costValue;
@@ -657,6 +1012,7 @@ nbin = [ ntrt , nsub ];
             ax.XTickLabel = {'0.10','0.20'};
             xlabel('incentive level (€)  '); 
             ylabel('force duration (sec) '); 
+            ylabel('effort rate (%fmax) '); 
 %             ylabel('rest duration (sec) '); 
 
             ax.XLim = [0 x(end)+1];
@@ -699,6 +1055,7 @@ nbin = [ ntrt , nsub ];
             cost_t(nt<=1) = NaN;
             
             cumCost = cost_t.*effort_t;
+            cumCost = effort_t;
             cumCost2 = quantileranks(cumCost,nbin(2));
             cumCost2(cumCost2==0)=1;
             
@@ -739,7 +1096,7 @@ nbin = [ ntrt , nsub ];
             ax = gca; 
 %             ax.XTick = x;
 %             ax.XTickLabel = {'0.10','0.20'};
-            xlabel('effort cummulated_{t-1}  (%fmax.sec) '); 
+            xlabel('force duration_{t-1}  (sec) '); 
             ylabel('rest duration (sec) '); 
 %             ax.XLim = [0 max(max(x))+1];
 %             ax.YLim = [0 1];
@@ -821,70 +1178,7 @@ nbin = [ ntrt , nsub ];
     % format
     setFigProper('FontSize',20,'LineWidth',2);
     
-%% second-level stats
-% raw effect
-    nbin = [ 3 , 2 , nsub ];
 
- % variables
-    Y = nan(nbin);
-
-    for isub = 1:nsub
-                
-        % select
-            tab = data{isub}.battery.table; 
-            selection =  (tab.task=='gripAccu') ;
-            tab = tab(selection,:);
-            
-        % variables
-            effort = (tab.effortDuration);
-%             effort = errorscore(tab.effortDuration);
-%             effort = errorscore(tab.restDuration);
-
-            cost = tab.costValue;
-            incentive = tab.incentiveValue;
-
-            trt = tab.treatment;
-            trt = removecats(trt,'0');
-            trt = reordercats(trt,sort(categories(trt)));
-            
-            session = tab.sessionNumber;
-            
-        % first level stats
-            [~,subtrt] = ismember(unique(trt),treatmentList);
-            Y(subtrt,1,isub) =  tools.tapply(effort,{trt},@nanmean);
-            Y(subtrt,2,isub) =  tools.tapply(session,{trt},@unique);
-
-
-    end
-    
-    % second level stats
-%     trt = repmat([1 2 3]',nsub,1);
-    trt = repmat([1 -1 0]',nsub,1);
-    session = reshape(Y(:,2,:),nsub*3,1);
-    effort = reshape(Y(:,1,:),nsub*3,1);
-    
-    formula = 'effort ~ 1 + trt + session';
-    stat = fitglm([trt,session],effort,...
-                   formula,...
-                   'VarNames',{'trt','session','effort'},...
-                   'CategoricalVars',1);
-    coef = stat.Coefficients;
-    coef.Properties.RowNames = {'morphine','naloxone','placebo','session'};
-               
-%     formula = 'effort ~ -1 + trt + session';
-%     stat = fitglm([trt,session],effort,...
-%                    formula,...
-%                    'VarNames',{'trt','session','effort'});
-%     coef = stat.Coefficients;
-%     coef.Properties.RowNames = {'treatment','session'};
-
-    disp(coef);
-
-%     writetable(coef,'stat_gripAccu.xlsx','WriteRowNames',1);
-
-    [p,F,d] = coefTest(stat,[1 1 1 0])
-%     [p,F,d] = coefTest(stat,[0 0 0 1])
-    [p,F,d] = coefTest(stat,[1 0 -1 0])
 
 
 %% second-level stats
@@ -1286,7 +1580,8 @@ nbin = [ ntrt , nsub ];
             tab = tab(selection,:);
             
         % variables
-            correct = tab.isOptimalChoice;
+%             correct = tab.isOptimalChoice;
+            correct = tab.optimalChoice;
             money = tab.outcome*10;
             valence = tab.pairValence;
 
@@ -1335,6 +1630,21 @@ nbin = [ ntrt , nsub ];
 
         % format
         setFigProper('FontSize',20,'LineWidth',2);
+        
+%%
+taskname = 'learning';
+yname = 'trialDuration';
+
+% ftransform = @ (x) normalize(x,'max');
+ftransform = @identity;
+
+fname = @nanmean;
+% fname = @nanmax;
+
+ylegend = 'force duration (% trial duration)';
+stat = barcomp_motiscan_opioid(data,yname,ylegend,taskname,...
+                               'fname',fname,'ftransform',ftransform,...
+                               'sessionSplit',0); % without session interaction
 
 %% learning
 % learning effects
@@ -1449,8 +1759,10 @@ nbin = [ ntrt , nsub ];
             tab = tab(selection,:);
             
         % variables
-            correct = tab.isOptimalChoice;
-            prediction = tab.predicted_isOptimalChoice;
+%             correct = tab.isOptimalChoice;
+            correct = tab.optimalChoice;
+            prediction = tab.isOptimalChoice;
+%             prediction = tab.predicted_isOptimalChoice;
             valence = tab.pairValence;
             block = tab.blockNumber + (tab.sessionNumber-1)*3;
             nt = tab.trialNumberByValence;
@@ -1502,20 +1814,20 @@ nbin = [ ntrt , nsub ];
                 yy = permute(1-y(it,1,:),[3 1 2]);
                 yy2 = permute(1-y2(it,1,:),[3 1 2]);
                 zz = permute(z(it,1,:),[3 1 2]);
-                [~,~,h(it)] = errorscat(xx,yy,zz,col{it});
-                h(it).LineStyle='none';
-                h(it) = plot(xx,yy2,'Color',col{it});
-                h(it).LineStyle='--';
+                [~,~,h] = errorscat(xx,yy,zz,col{it});
+%                 h.LineStyle='none';
+                h = plot(xx,yy2,'Color',col{it});
+                h.LineStyle='--';
                 
                 xx = permute(x(it,2,:),[3 1 2]);
                 yy = permute(y(it,2,:),[3 1 2]);
                 yy2 = permute(y2(it,2,:),[3 1 2]);
                 zz = permute(z(it,2,:),[3 1 2]);
-                [~,~,h(it)] = errorscat(xx,yy,zz,col{it});
-                h(it).LineStyle='none';
-                h(it) = plot(xx,yy2,'Color',col{it});
+                [~,~,h] = errorscat(xx,yy,zz,col{it});
+%                 h.LineStyle='none';
+                h = plot(xx,yy2,'Color',col{it});
             end
-            legend([h(1) h(2) h(3)],treatmentList);
+%             legend([h(1) h(2) h(3)],treatmentList);
             
         % legending
             ax = gca; 
@@ -1581,6 +1893,111 @@ nbin = [ ntrt , nsub ];
             ax.XTickLabel = paramName(x);
             ylabel(' parametric effects (dev from the mean) '); 
             ax.XLim = [0 max(x)+1];
+            
+%% 3 ) Learning task
+taskname = 'learning';
+
+%% Data completion
+for isub = 1:nsub % subject loop
+        % select
+        tab = data{isub}.battery.table; 
+        selection =  (tab.task==taskname) ;
+        tab = tab(selection,:);
+        % variables
+        accuracy = double(tab.isOptimalChoice == tab.optimalChoice);
+        valence = tab.pairValence;
+        money = tab.outcome*10;
+        trt = tab.treatment;
+        trt = removecats(trt,'0');
+%         trt = reordercats(trt,treatmentList);
+        % stats
+        data{isub}.(taskname).table.accuracy = accuracy;
+        [x,id,id2] = findgroups(valence(valence~=0),trt(valence~=0));
+        y = accuracy(valence~=0);
+        ycond = splitapply(@nanmean,y,x);
+        result{isub}.(taskname).inferential.optimal_Gain = ycond(4:6);
+        result{isub}.(taskname).inferential.optimal_Loss = ycond(1:3);
+end
+
+%% Parametric effect of treatments:
+
+%   - predicted variables
+% yname = {'correct_Gain','correct_Loss'};
+yname = {'optimal_Gain','optimal_Loss'};
+% yname = {'repetition_Neutral','repetition_previousLoss','repetition_previousNeutral_Loss','repetition_previousNeutral_Gain','repetition_previousGain'};
+% yname = {'correct_infirmed_Loss','correct_confirmed_Loss','correct_infirmed_Gain','correct_confirmed_Gain'};
+% yname = {'alpha','beta','kR','kP','BCA'};
+
+%   - transform
+fname = @nanmean;
+% ftransform = @log;
+ftransform = @identity;
+% ftransform = @ (x) normalize(x,'variance');
+%   - legend
+ylegend = '';
+% ylegend = 'parameters';
+
+%   - order interaction
+order = [];
+%   - statistic:
+%   'morphine_contrast','naloxone_contrast','opioid_contrast',...
+%   'morphine_ttest','naloxone_ttest','opioid_ttest'
+statistic = {'opioid_ttest'};
+% statistic = {'naloxone_contrast','morphine_contrast'};
+% statistic = {'naloxone_ttest','morphine_ttest'};
+%   - plot: 'bar','dot','jitter','boxplot','violin','line'
+plot = {'boxplot'};
+sessionEffect=0;
+
+[p,score,stat] = barcomp_stat_motiscan_opioid(result,yname,ylegend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot);
+                           
+%% Bivariate effect of treatment
+%   - predicted variable
+% yname = 'isOptimalChoice';
+yname = 'accuracy';
+% yname = 'RT';
+
+%   - factor
+xname = 'trialNumberByValence';
+% xname = 'correctLogOddRatio';
+
+interaction = 'pairValence';
+%   - transform
+ftransform = @identity;
+%   - statistical function
+fname = @nanmean;
+% fname = @nanmax;
+%   - session interaction
+sessionEffect=0;
+%   - legend
+legend = {'trial (n)','correct choice(%)','valence'};
+%   - order interaction
+order = [];
+% order = orderGrip;
+%   - plot: 'dot','jitter','line'
+% plot = {'dot','errorbar'};
+% plot = {'jitter','errorbar'};
+plot = {'errorbar'};
+
+%   - interaction
+
+
+figure;
+bivarcomp_motiscan_opioid(data,xname,yname,legend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot,...
+                               'interactionfactor',interaction);
+            
             
             
 %% volterra decomposition
@@ -2050,3 +2467,379 @@ nbin = [ 3 , 3 , 6 , nsub ];
                 ax.XTick = [];
                 title(ylist{idim}); 
             end
+            
+%% 4 ) Preference tasks
+taskname = 'battery';
+
+
+%% Bivariate effect of treatment
+taskname = 'rating';
+% taskname = 'weight';
+
+
+%   - predicted variable
+yname = 'rating';
+% yname = 'isGoChoice';
+
+%   - factor
+% xname = 'dimension';
+% xname = 'benefitItemRatingValue';
+xname = 'itemSubtype';
+
+interaction = [];
+% interaction = 'dimension';
+% interaction = 'pairValence';
+%   - transform
+ftransform = @identity;
+%   - statistical function
+fname = @nanmean;
+% fname = @nanmax;
+%   - session interaction
+sessionEffect=0;
+%   - legend
+legend = {'dimension','rating(%)'};
+% legend = {'benefit rating','acceptance(%)','dimensions'};
+statistic = {'opioid_ttest'};
+%   - order interaction
+order = [];
+% order = orderGrip;
+%   - plot: 'dot','jitter','line'
+% plot = {'dot','errorbar'};
+% plot = {'jitter','errorbar','boxplot'};
+plot = {'boxplot'};
+% plot = {'errorbar'};
+
+%   - interaction
+
+
+figure;
+bivarcomp_motiscan_opioid(data,xname,yname,legend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot,...
+                               'interactionfactor',interaction);
+                           
+%% Effect on item-specific ratings
+
+
+% --- 1. Item-specific additive treatment effect
+% variables
+ndim=3;
+ntrt=3;
+nitem=24;
+DIM = [];
+T = [];
+S = [];
+Y = nan(ndim,ntrt,nsub);
+Y2 = nan(ndim,ntrt,nsub);
+
+for isub = 1:nsub
+    % select
+        tab = data{isub}.rating.table  ; 
+        subset = (tab.dimension=='writtenReward' |tab.dimension=='writtenPunishment' |tab.dimension=='writtenEffort' );
+        tab = tab( subset,:);
+
+    % variables
+        trt = tab.treatment;
+        trt = removecats(trt,'0');
+        trt = reordercats(trt,treatmentList);
+        rating = tab.rating./100;
+        dim = tab.dimension;
+        dim = removecats(dim,dimensionList([2 5:14]));
+        dim = reordercats(dim,dimensionList([1 3 4]));
+        item = tab.itemNumber;
+        sess = tab.sessionNumber;
+
+    % first level stats
+        [g,ind_dim,ind_item,ind_trt] = findgroups(dim,item,trt);
+        ysub = splitapply(@unique,rating,g);
+        
+        ysub = permute(reshape(ysub,[3 24 3]),[3 2 1]);
+        ysub2 = ysub - mean(ysub,3);
+        ysub = nanmean(ysub,2);
+        ysub2 = nanmean(ysub2,2);
+        Y(:,:,isub) =   reshape(ysub,[ndim,ntrt]);
+        Y2(:,:,isub) =   reshape(ysub2,[ndim,ntrt]);
+        
+        [g,ind_trt,ind_dim] = findgroups(trt,dim);
+        subsess = splitapply(@nanmean,sess,g);
+        S = [S ; subsess];
+        DIM = [DIM ; ind_dim];
+        T = [T ; ind_trt];
+
+end
+    
+% second level stats
+% reshape
+y = reshape(Y2,ndim*ntrt*nsub,1);
+dim = reshape(DIM,ndim*ntrt*nsub,1);
+trt = reshape(T,ndim*ntrt*nsub,1);
+sess = reshape(S,ndim*ntrt*nsub,1);
+
+% glm
+% predictor = [ (trt=='naloxone') , (trt=='placebo'), (trt=='morphine') , dim, sess ];
+% formula = ['y ~ -1 + placebo + naloxone + morphine + dim:(placebo + naloxone + morphine) + session '];
+predictor =  table((T=='naloxone')*(-1) + (T=='placebo')*0 + (T=='morphine')*1 , dim, sess );
+predictor.Properties.VariableNames = {'opioid','dim','session'};
+formula = ['y ~ -1 + opioid + dim:opioid + session'];
+stat = fitglm([predictor,table(y)],formula);
+coef = stat.Coefficients;
+disp(coef);
+
+
+% display
+clear g;
+alpha=0.8;
+g = gramm('x',dim,'y',y,'color',trt);
+g.set_color_options('map',vertcat(col{:}),'lightness',100);
+g.set_order_options('x',dimensionList([1 3 4]),'color',treatmentList);
+% g.geom_jitter('height',0.01);
+g.stat_boxplot('width',0.9);
+g.set_names('x','','y','rating deviation from mean (%)','color','treatment');
+g.axe_property('YLim',[mean(min(y)) mean(max(y))] + [-0.2 0.2]*mean(mean(y)));
+% g.axe_property('XTickLabelRotation',45);
+g.draw;
+axes(g.facet_axes_handles);
+set_all_properties('FontName','Arial Narrow','FontWeight','bold','FontSize',16,...
+                    'LineWidth',1.5,'FaceAlpha',alpha);
+
+%% --- 2. Item-specific multiplicative treatment effect
+% variables
+ndim=3;
+ntrt=3;
+nitem=24;
+DIM = [];
+T = [];
+S = [];
+ITEM = [];
+Y = nan(ndim,nitem,ntrt,nsub);
+Y2 = nan(ndim,nitem,ntrt,nsub);
+
+for isub = 1:nsub
+    % select
+        tab = data{isub}.rating.table  ; 
+        subset = (tab.dimension=='writtenReward' |tab.dimension=='writtenPunishment' |tab.dimension=='writtenEffort' );
+        tab = tab( subset,:);
+
+    % variables
+        trt = tab.treatment;
+        trt = removecats(trt,'0');
+        trt = reordercats(trt,treatmentList);
+        rating = tab.rating./100;
+        dim = tab.dimension;
+        dim = removecats(dim,dimensionList([2 5:14]));
+        dim = reordercats(dim,dimensionList([1 3 4]));
+        item = tab.itemNumber;
+        sess = tab.sessionNumber;
+
+    % first level stats
+        [g,g_trt,g_item,g_dim] = findgroups(trt,item,dim);
+        ysub = splitapply(@unique,rating,g);        
+        ysub = reshape(ysub,[ndim,nitem,ntrt]);
+        ysub2 = ysub - mean(ysub,3);
+        Y(:,:,:,isub) =   repmat(mean(ysub,3),1,1,3);
+        Y2(:,:,:,isub) =   ysub2;
+        
+        subsess = splitapply(@nanmean,sess,g);
+        S = [S ; subsess];
+        DIM = [DIM ; g_dim];
+        T = [T ; g_trt];
+        ITEM = [ITEM ; g_item];
+
+end
+    
+% second level stats
+YGROUP = mean(mean(Y,4),3);
+Y3 = Y2 + YGROUP;
+
+% reshape
+x = reshape(Y,ndim*ntrt*nitem*nsub,1);
+y = reshape(Y3,ndim*ntrt*nitem*nsub,1);
+dim = reshape(DIM,ndim*ntrt*nitem*nsub,1);
+item = reshape(ITEM,ndim*ntrt*nitem*nsub,1);
+trt = reshape(T,ndim*ntrt*nitem*nsub,1);
+sess = reshape(S,ndim*ntrt*nitem*nsub,1);
+itemRatingsByTrt = Y;
+itemRatings = squeeze(mean(Y,3));
+
+% display
+dimList = dimensionList([1 3 4]);
+titleList = {'reward','punishment','effort'};
+clear g;
+alpha=0.8;
+for idim=1:3
+    [~,rank] = sort(YGROUP(idim,:));
+    g(1,idim) = gramm('x',nominal(item),'y',y,'color',trt,'subset',(dim==dimList{idim}));
+    g(1,idim).set_color_options('map',vertcat(col{:}),'lightness',100);
+    g(1,idim).set_order_options('x',nominal(rank),'color',treatmentList);
+    g(1,idim).stat_summary('type','sem','geom',{'point','errorbar','line'});
+%     g(1,idim).set_names('x','item number','y','rating average | treatment, item (%)','color','treatment');
+    g(1,idim).set_names('x','item rank (sorted by average rating)','y','rating average | treatment, item (%)','color','treatment');
+    g(1,idim).set_title(titleList{idim});
+    g(1,idim).axe_property('XLim',[0 25],'YLim',[0 1],'XTick',[]);
+    
+end
+g.draw;
+for idim=1:3
+axes(g(1,idim).facet_axes_handles);
+set_all_properties('FontName','Arial Narrow','FontWeight','bold','FontSize',16,...
+                    'LineWidth',1.5,'FaceAlpha',alpha);
+end
+
+                           
+%%
+
+% taskname = 'battery';
+taskname = 'weight';
+
+% % model-based
+% yname = {'muR','muP','muE','alpha','bR','t0','theta'};
+% % ftransform = @log;
+% ftransform = @identity;
+% % ftransform = @ (x) normalize(x,'variance');
+% 
+% [p,F,stat] = barcomp_stat_motiscan_opioid(result,yname,'parameters',taskname,...
+%                                'fname',@nanmean,'ftransform',ftransform,...
+%                                'sessionSplit',0); % without session interaction
+
+% model-based
+yname = {'acceptanceRate_RE','acceptanceRate_PE','acceptanceRate_RP'};
+%   - transform
+fname = @nanmean;
+% ftransform = @log;
+ftransform = @identity;
+% ftransform = @ (x) normalize(x,'variance');
+%   - legend
+ylegend = '';
+% ylegend = 'parameters';
+
+%   - order interaction
+order = [];
+%   - statistic:
+%   'morphine_contrast','naloxone_contrast','opioid_contrast',...
+%   'morphine_ttest','naloxone_ttest','opioid_ttest'
+statistic = {'opioid_ttest'};
+% statistic = {'naloxone_contrast','morphine_contrast'};
+% statistic = {'naloxone_ttest','morphine_ttest'};
+%   - plot: 'bar','dot','jitter','boxplot','violin','line'
+plot = {'boxplot'};
+sessionEffect=0;
+
+[p,score,stat] = barcomp_stat_motiscan_opioid(result,yname,ylegend,taskname,...
+                               'fname',fname,...
+                               'ftransform',ftransform,...
+                               'sessionSplit',sessionEffect,...
+                               'order',order,...
+                               'statisticalTest',statistic,...
+                               'plotType',plot);
+                           
+%% logistic regression effect of opioids
+
+% variables
+nparam=6;
+ntrt=3;
+T = [];
+S = [];
+Y = nan(nparam,ntrt,nsub);
+Y2 = nan(nparam,ntrt,nsub);
+
+for isub = 1:nsub
+    % select
+    tab = data{isub}.weight.table  ; 
+
+    % variables
+    trt = tab.treatment;
+    trt = removecats(trt,'0');
+    trt = reordercats(trt,treatmentList);
+    dim = tab.dimension;
+    dim = removecats(dim,dimensionList([1:7,11:14]));
+    dim = reordercats(dim,dimensionList([8 9 10]));
+    % rating values|trt
+%         reward = tab.rewardRatingValue./100;
+%         punishment = tab.punishmentRatingValue./100;
+%         punishment(dim=='PunishmentEffort') = - punishment(dim=='PunishmentEffort');
+%         effort = tab.effortRatingValue./100;
+    % rating values (average)
+        benefit_item = tab.benefitItemNumber;
+        cost_item = tab.costItemNumber;
+        reward = zeros(size(trt));
+        reward(dim=='RewardEffort') = itemRatings(1,benefit_item(dim=='RewardEffort'),isub);
+        reward(dim=='RewardPunishment') = itemRatings(1,benefit_item(dim=='RewardPunishment'),isub);
+        punishment = zeros(size(trt));
+        punishment(dim=='PunishmentEffort') = - itemRatings(2,benefit_item(dim=='PunishmentEffort'),isub);
+        punishment(dim=='RewardPunishment') = itemRatings(2,cost_item(dim=='RewardPunishment'),isub);
+        effort = zeros(size(trt));
+        effort(dim=='RewardEffort') = itemRatings(3,cost_item(dim=='RewardEffort'),isub);
+        effort(dim=='PunishmentEffort') = itemRatings(3,cost_item(dim=='PunishmentEffort'),isub);
+    sess = tab.sessionNumber;
+    accept = tab.isGoChoice;
+
+    % first level stats
+    predictor = table(trt,dim,reward,punishment,effort,sess,accept);
+    formula = ['accept ~ dim + reward + punishment + effort'];
+    for i = 1:numel(treatmentList)
+        subset = (trt==treatmentList{i});
+        subpredictor = predictor(subset,:);
+        stat = fitglm(subpredictor,formula);
+        coef = stat.Coefficients;
+        coef.Properties.RowNames{1} = 'dim_RewardEffort';
+        Y(:,i,isub) = coef.Estimate;
+    end
+    Y2(:,:,isub) = Y(:,:,isub) - mean(Y(:,:,isub),2);
+    g = findgroups(trt);
+    subsess = splitapply(@unique,sess,g);
+    S = [S,subsess];    
+
+end
+    
+% second level stats
+% reformat
+Y2 = Y2 + nanmean(nanmean(Y,3),2);
+paramNames = coef.Properties.RowNames;
+y = reshape(Y2,nparam,ntrt*nsub,1)';
+trt = repmat(nominal(treatmentList)',nsub,1);
+sess = reshape(S,ntrt*nsub,1);
+
+% glm
+predictor = table((trt=='naloxone'),(trt=='placebo'),(trt=='morphine'),sess);
+predictor.Properties.VariableNames = {'naloxone','placebo','morphine','session'};
+formula = ['y ~ -1 + placebo + naloxone + morphine + session '];
+contrast = [-1 0 1 0];
+% predictor =  table((trt=='naloxone')*(-1) + (trt=='placebo')*0 + (trt=='morphine')*1, sess );
+% predictor.Properties.VariableNames = {'opioid','session'};
+% formula = ['y ~ 1 + opioid + session'];
+for ip = 1:nparam
+    stat = fitglm([predictor,table(y(:,ip),'VariableNames',{'y'})],formula);
+    coef = stat.Coefficients;
+    disp(paramNames{ip});
+    disp(coef);
+    [p,score,df] = coefTest(stat,contrast);
+    fprintf('contrast: morphine > naloxone , F = %d, p = %d \n',score,p);
+    [p,t] = linhyptest(stat.Coefficients.Estimate,stat.CoefficientCovariance,0,[-1 0 1 0],stat.DFE);
+    fprintf('contrast: morphine > naloxone , F = %d, p = %d \n',t,p);
+end
+
+% reshape
+y = reshape(y,nparam*ntrt*nsub,1);
+param = reshape(repmat(nominal(paramNames'),ntrt*nsub,1),nparam*ntrt*nsub,1);
+trt = repmat(trt,nparam,1);
+sess = repmat(sess,nparam,1);
+sub = reshape(repmat([1:nsub],nparam*ntrt,1),nparam*ntrt*nsub,1);
+
+% display
+clear g;
+alpha=0.8;
+g = gramm('x',param,'y',y,'color',trt);
+g.set_color_options('map',vertcat(col{:}),'lightness',100);
+g.set_order_options('color',treatmentList);
+% g.stat_summary('type','sem','geom',{'bar','black_errorbar'});
+g.stat_boxplot('width',0.9);
+g.set_names('x','','y','logistic regression coefficients (au.)','color','treatment');
+g.axe_property('XTickLabelRotation',45);
+g.draw;
+axes(g.facet_axes_handles);
+set_all_properties('FontName','Arial Narrow','FontWeight','bold','FontSize',16,...
+                    'LineWidth',1.5,'FaceAlpha',alpha);

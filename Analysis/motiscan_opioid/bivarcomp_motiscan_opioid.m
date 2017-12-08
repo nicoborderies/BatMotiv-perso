@@ -127,7 +127,7 @@ if isempty(interactionfactor)
     end
     g.set_names('x',legend{1},'y',legend{2},'color','treatment');
     if sessionSplit || ~isempty(order); g.axe_property('XLim',[0 4]); end
-    g.axe_property('YLim',[min(Y2) max(Y2)] + [-0.2 0.2]*mean(Y2));
+    g.axe_property('YLim',[nanmin(Y2) nanmax(Y2)] + [-0.2 0.2]*nanmean(Y2));
 else
     j=0;
     for iz = unique(Z)'
@@ -168,7 +168,7 @@ else
         end
         g(1,j).set_names('x',legend{1},'y',legend{2},'color','treatment');
         if sessionSplit || ~isempty(order); g(1,j).axe_property('XLim',[0 4]); end
-        g(1,j).axe_property('YLim',[min(Y2) max(Y2)] + [-0.2 0.2]*mean(Y2));
+        g(1,j).axe_property('YLim',[nanmin(Y2) nanmax(Y2)] + [-0.2 0.2]*nanmean(Y2));
     end
 end
 g.draw;

@@ -1,4 +1,4 @@
-function [p,stat] = glm_gripAccu_motiscan_opioid(data,yname,varnames,formula,varargin)
+function [p,coefNames,stat] = glm_gripAccu_motiscan_opioid(data,yname,varnames,formula,varargin)
 
 % check options
 optionList = {'fname','ftransform','sessionSplit','order','statisticalTest','plotType'};
@@ -39,9 +39,11 @@ R2 = [];
 % group averaging
 for isub = 1:nsub % subject loop
     % select
-        tab = data{isub}.battery.table; 
-        selection =  (tab.task==taskname) ;
-        tab = tab(selection,:);
+%         tab = data{isub}.battery.table; 
+%         selection =  (tab.task==taskname) ;
+%         tab = tab(selection,:);
+        tab = data{isub}.(taskname).table; 
+
     % variables
         y = tab.(yname);
         y = ftransform(y);
@@ -135,7 +137,7 @@ DRUGLABEL = repmat(drugLabel,nsub,1);
 
 % statistics 2nd level
 %%% ttest
-[h,p] = ttest(Y');
+[h,p,~,stat] = ttest(Y');
 
 
 % display
@@ -169,7 +171,7 @@ g.set_names('x',xname,'y','coefficients');
 g.set_title(['GLM : ' yname ]);
 if sessionSplit || ~isempty(order); g.axe_property('XLim',[0 4]); end
 ylimits = [ min(mean(Y,2)-2*sem(Y,2)) max(mean(Y,2)+2*sem(Y,2))];
-g.axe_propert('YLim',ylimits);
+g.axe_property('YLim',ylimits);
 g.axe_property('XTickLabelRotation',45);
 g.draw; 
 axes(g.facet_axes_handles);

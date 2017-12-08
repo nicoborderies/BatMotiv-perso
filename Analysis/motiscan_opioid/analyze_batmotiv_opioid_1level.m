@@ -20,8 +20,8 @@
     % individual options
     option = set_batmotiv_option;
     option.analysis.battery.set_analysis = @set_analysis_vRelease; % @set_analysis_vRelease;
-    option.design.taskList =   {'gripAccu','grip','learning','rating','weight'};
-%     option.design.taskList =   {'rating','weight'};
+%     option.design.taskList =   {'gripAccu','grip','learning','rating','weight'};
+    option.design.taskList =   {'grip'};
 
     option.analysis.learning.processor = @process_learning_opioid;
     option.analysis.gripAccu.selectedModel = 1;
@@ -32,7 +32,7 @@
 
     option.analysis.display=0;
     option.analysis.save=0;
-    option.analysis.parallel=1;
+    option.analysis.parallel=0;
     option.analysis.sequential=1;
     
 %     % opioid
@@ -43,7 +43,7 @@
     
     % subject loop options
     parallel = 0;
-    compilation = 1;
+    compilation = 0;
     
     analysisName = 'batmotiv_analysis_OPIOID';
 
